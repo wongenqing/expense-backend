@@ -131,10 +131,23 @@ def extract_date(text):
 
 
 def extract_merchant(text):
-    match = re.search(r'(?:at|from|in)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    # Capture after "at/from/in"
+    match = re.search(r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)', text, re.IGNORECASE)
+    
     if match:
-        return match.group(1).strip()
+        merchant = match.group(1).strip()
 
+        # ❗ Remove trailing keywords
+        merchant = re.sub(
+            r'\b(yesterday|today|tomorrow|for|on|with|and|using)\b.*',
+            '',
+            merchant,
+            flags=re.IGNORECASE
+        )
+
+        return merchant.strip()
+
+    # fallback spaCy
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ in ["ORG", "GPE"]:
