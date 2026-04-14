@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-torch==2.2.2
+torch
 transformers
 dateparser
 pytz
