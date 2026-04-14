@@ -183,9 +183,94 @@ def extract_merchant(text):
 
     return None
 
+# =========================================
+# RULE-BASED FALLBACK (19 categories)
+# =========================================
+def rule_based_category(text):
+    text = text.lower()
+
+    rules = {
+        "Food & Drink": [
+            "food", "lunch", "dinner", "breakfast",
+            "kfc", "mcd", "mcdonald", "restaurant",
+            "coffee", "starbucks", "tea", "grabfood"
+        ],
+
+        "Transportation": [
+            "grab", "taxi", "uber", "bus", "train",
+            "lrt", "mrt", "toll", "petrol", "fuel",
+            "parking"
+        ],
+
+        "Shopping": [
+            "shop", "shopping", "mall", "lazada",
+            "shopee", "store", "clothes", "shoes"
+        ],
+
+        "Groceries": [
+            "grocery", "supermarket", "tesco",
+            "aeon", "giant", "mydin", "99 speedmart"
+        ],
+
+        "Utilities": [
+            "electric", "water", "wifi", "internet",
+            "unifi", "celcom", "maxis"
+        ],
+
+        "Entertainment": [
+            "movie", "cinema", "netflix", "spotify",
+            "game", "concert"
+        ],
+
+        "Healthcare": [
+            "hospital", "clinic", "pharmacy",
+            "medicine", "doctor"
+        ],
+
+        "Education": [
+            "school", "tuition", "course", "book",
+            "university", "college"
+        ],
+
+        "Travel": [
+            "flight", "hotel", "airbnb", "trip"
+        ],
+
+        "Insurance": [
+            "insurance", "takaful"
+        ],
+
+        "Investment": [
+            "stock", "crypto", "bitcoin", "fund"
+        ],
+
+        "Rent": [
+            "rent", "room rent"
+        ],
+
+        "Gifts": [
+            "gift", "present", "birthday"
+        ],
+
+        "Subscriptions": [
+            "subscription", "monthly"
+        ],
+
+        "Personal Care": [
+            "salon", "haircut", "spa", "skincare"
+        ],
+
+    }
+
+    for category, keywords in rules.items():
+        if any(word in text for word in keywords):
+            return category
+
+    return None
+
 
 def predict_category(text):
-    # ✅ FIX 2: use cleaned text
+    # ✅ Clean input for model
     cleaned = clean_text(text)
 
     inputs = tokenizer(
@@ -200,8 +285,16 @@ def predict_category(text):
         outputs = model(**inputs)
 
     pred_id = outputs.logits.argmax().item()
+    model_category = label_map[str(pred_id)]
 
-    return label_map[str(pred_id)]
+    # 🔥 Rule-based fallback
+    rule_category = rule_based_category(text)
+
+    # ✅ Smart override (ONLY when model is weak)
+    if rule_category and model_category in ["Others"]:
+        return rule_category
+
+    return model_category
 
 
 # =========================================
