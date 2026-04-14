@@ -16,7 +16,7 @@ import zipfile
 # =========================================
 # CONFIG
 # =========================================
-MODEL_PATH = "model"
+MODEL_PATH = "model"   # ✅ FIXED
 MODEL_ZIP = "model.zip"
 
 MODEL_URL = "https://drive.google.com/uc?id=1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg"
@@ -38,7 +38,7 @@ def load_model():
     if model is not None:
         return
 
-    print("⬇️ Loading model on demand...")
+    print("⬇️ Loading model...")
 
     # Download if not exist
     if not os.path.exists(MODEL_PATH):
@@ -47,7 +47,10 @@ def load_model():
 
         print("📦 Extracting model...")
         with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
-            zip_ref.extractall(MODEL_PATH)
+            zip_ref.extractall(".")   # ✅ FIXED
+
+    # 🔍 DEBUG (optional)
+    print("📂 Model folder:", os.listdir(MODEL_PATH))
 
     # Load model
     model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
@@ -77,6 +80,7 @@ except:
 # FASTAPI
 # =========================================
 app = FastAPI()
+
 
 @app.on_event("startup")
 def startup_event():
@@ -110,7 +114,6 @@ def format_datetime(dt):
 
 def extract_date(text):
     text_lower = re.sub(r'[^\w\s]', '', text.lower())
-
     today = get_today()
 
     if "yesterday" in text_lower:
