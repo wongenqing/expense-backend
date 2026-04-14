@@ -50,25 +50,30 @@ model = None
 tokenizer = None
 label_map = None
 
-
 def load_model():
     global model, tokenizer, label_map
 
-    if model is None:
-        print("🔄 Loading model...")
+    if model is not None:
+        return
 
-        model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
-        model.to(device)
-        model.eval()
+    print("⬇️ Loading model on demand...")
 
-        tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+    # download if not exist
+    if not os.path.exists(MODEL_PATH):
+        subprocess.run(["pip", "install", "gdown"])
+        subprocess.run(["gdown", MODEL_URL, "-O", "model.zip"])
+        subprocess.run(["unzip", "model.zip"])
 
-        with open(f"{MODEL_PATH}/label_map.json") as f:
-            label_map = json.load(f)
+    model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
+    model.to(device)
+    model.eval()
 
-        print("✅ Model loaded successfully!")
+    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
 
-    return model
+    with open(f"{MODEL_PATH}/label_map.json") as f:
+        label_map = json.load(f)
+
+    print("✅ Model ready!")
 
 
 # =========================================
@@ -157,26 +162,21 @@ def extract_merchant(text):
 
 
 def predict_category(text):
-    try:
-        model = load_model()
+    load_model()  # 🔥 LOAD ONLY WHEN NEEDED
 
-        inputs = tokenizer(
-            text,
-            return_tensors="pt",
-            truncation=True,
-            padding=True,
-            max_length=128
-        ).to(device)
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=128
+    ).to(device)
 
-        with torch.no_grad():
-            outputs = model(**inputs)
+    with torch.no_grad():
+        outputs = model(**inputs)
 
-        pred_id = outputs.logits.argmax().item()
-        return label_map[str(pred_id)]
-
-    except Exception as e:
-        print("❌ Prediction error:", e)
-        return "Prediction failed"
+    pred_id = outputs.logits.argmax().item()
+    return label_map[str(pred_id)]
 
 
 def process_expense(text):
