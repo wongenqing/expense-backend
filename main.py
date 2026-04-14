@@ -137,8 +137,6 @@ def extract_merchant(text):
 
 
 def predict_category(text):
-    load_model()  # ✅ IMPORTANT
-
     inputs = tokenizer(
         text,
         return_tensors="pt",
