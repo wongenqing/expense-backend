@@ -1,7 +1,12 @@
-fastapi
-uvicorn
-torch
-transformers
-dateparser
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+fastapi==0.110.0
+uvicorn==0.29.0
+
+torch==2.5.1
+transformers==4.41.2
+
+spacy==3.7.4
+dateparser==1.2.0
 pytz
 gdown
