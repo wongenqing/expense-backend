@@ -1,3 +1,6 @@
+# =========================================
+# IMPORTS
+# =========================================
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import RobertaForSequenceClassification, RobertaTokenizerFast
@@ -16,9 +19,8 @@ import zipfile
 # =========================================
 # CONFIG
 # =========================================
-MODEL_PATH = "model"   # ✅ FIXED
+MODEL_PATH = "model"
 MODEL_ZIP = "model.zip"
-
 MODEL_URL = "https://drive.google.com/uc?id=1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,6 +34,9 @@ tokenizer = None
 label_map = None
 
 
+# =========================================
+# LOAD MODEL
+# =========================================
 def load_model():
     global model, tokenizer, label_map
 
@@ -47,9 +52,8 @@ def load_model():
 
         print("📦 Extracting model...")
         with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
-            zip_ref.extractall(".")   # ✅ FIXED
+            zip_ref.extractall(".")
 
-    # 🔍 DEBUG (optional)
     print("📂 Model folder:", os.listdir(MODEL_PATH))
 
     # Load model
@@ -57,8 +61,10 @@ def load_model():
     model.to(device)
     model.eval()
 
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+    # ✅ FIX 1: Use correct tokenizer (IMPORTANT)
+    tokenizer = RobertaTokenizerFast.from_pretrained(MODEL_PATH)
 
+    # Load label map
     with open(f"{MODEL_PATH}/label_map.json") as f:
         label_map = json.load(f)
 
@@ -103,6 +109,19 @@ def get_today():
     return datetime.now(TIMEZONE)
 
 
+# ✅ CLEAN TEXT (IMPORTANT FOR MODEL)
+def clean_text(text):
+    text = text.lower()
+
+    # remove amount
+    text = re.sub(r'rm\s*\d+(\.\d{1,2})?', '', text)
+
+    # remove filler words
+    text = re.sub(r'\b(spent|paid|bought|for|on|at|in|the)\b', '', text)
+
+    return text.strip()
+
+
 def extract_amount(text):
     match = re.search(r'(?:rm\s*)?(\d+(?:\.\d{1,2})?)', text.lower())
     return float(match.group(1)) if match else None
@@ -117,7 +136,6 @@ def extract_date(text):
 
     today = get_today()
 
-    # Explicit keywords
     if "yesterday" in text_lower:
         return format_datetime(today - timedelta(days=1))
     if "today" in text_lower:
@@ -125,7 +143,6 @@ def extract_date(text):
     if "tomorrow" in text_lower:
         return format_datetime(today + timedelta(days=1))
 
-    # Only detect date if month/day keywords exist
     date_keywords = [
         "jan","feb","mar","apr","may","jun",
         "jul","aug","sep","oct","nov","dec",
@@ -138,18 +155,19 @@ def extract_date(text):
         if results:
             return format_datetime(results[0][1])
 
-    # DEFAULT: today
     return format_datetime(today)
 
 
 def extract_merchant(text):
-    # Capture after "at/from/in"
-    match = re.search(r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)', text, re.IGNORECASE)
-    
+    match = re.search(
+        r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)',
+        text,
+        re.IGNORECASE
+    )
+
     if match:
         merchant = match.group(1).strip()
 
-        # ❗ Remove trailing keywords
         merchant = re.sub(
             r'\b(yesterday|today|tomorrow|for|on|with|and|using)\b.*',
             '',
@@ -159,7 +177,6 @@ def extract_merchant(text):
 
         return merchant.strip()
 
-    # fallback spaCy
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ in ["ORG", "GPE"]:
@@ -169,17 +186,22 @@ def extract_merchant(text):
 
 
 def predict_category(text):
+    # ✅ FIX 2: use cleaned text
+    cleaned = clean_text(text)
+
     inputs = tokenizer(
-        text,
+        cleaned,
         return_tensors="pt",
         truncation=True,
-        padding=True
+        padding=True,
+        max_length=128
     ).to(device)
 
     with torch.no_grad():
         outputs = model(**inputs)
 
     pred_id = outputs.logits.argmax().item()
+
     return label_map[str(pred_id)]
 
 
