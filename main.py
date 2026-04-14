@@ -25,7 +25,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 
 # =========================================
-# GLOBAL MODEL (LAZY LOAD)
+# GLOBAL MODEL
 # =========================================
 model = None
 tokenizer = None
@@ -40,7 +40,7 @@ def load_model():
 
     print("⬇️ Loading model on demand...")
 
-    # ✅ Download model at runtime
+    # Download if not exist
     if not os.path.exists(MODEL_PATH):
         print("⬇️ Downloading model...")
         gdown.download(MODEL_URL, MODEL_ZIP, quiet=False)
@@ -49,7 +49,7 @@ def load_model():
         with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
             zip_ref.extractall(MODEL_PATH)
 
-    # ✅ Load model
+    # Load model
     model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
     model.to(device)
     model.eval()
@@ -91,15 +91,60 @@ def root():
 # =========================================
 # FUNCTIONS
 # =========================================
+def get_today():
+    return datetime.now(TIMEZONE)
+
+
 def extract_amount(text):
     match = re.search(r'(?:rm\s*)?(\d+(?:\.\d{1,2})?)', text.lower())
     return float(match.group(1)) if match else None
 
 
-def predict_category(text):
-    load_model()
+def format_datetime(dt):
+    return dt.strftime("%B %d, %Y at %I:%M:%S %p UTC+8")
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
+
+def extract_date(text):
+    text_lower = re.sub(r'[^\w\s]', '', text.lower())
+
+    today = get_today()
+
+    if "yesterday" in text_lower:
+        return format_datetime(today - timedelta(days=1))
+    if "today" in text_lower:
+        return format_datetime(today)
+    if "tomorrow" in text_lower:
+        return format_datetime(today + timedelta(days=1))
+
+    results = search_dates(text_lower)
+    if results:
+        return format_datetime(results[0][1])
+
+    return format_datetime(today)
+
+
+def extract_merchant(text):
+    match = re.search(r'(?:at|from|in)\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    doc = nlp(text)
+    for ent in doc.ents:
+        if ent.label_ in ["ORG", "GPE"]:
+            return ent.text
+
+    return None
+
+
+def predict_category(text):
+    load_model()  # ✅ IMPORTANT
+
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        padding=True
+    ).to(device)
 
     with torch.no_grad():
         outputs = model(**inputs)
@@ -108,10 +153,15 @@ def predict_category(text):
     return label_map[str(pred_id)]
 
 
+# =========================================
+# API
+# =========================================
 @app.post("/predict")
 def predict(input: TextInput):
     return {
         "text": input.text,
         "amount": extract_amount(input.text),
+        "date": extract_date(input.text),
+        "merchant": extract_merchant(input.text),
         "category": predict_category(input.text)
     }
