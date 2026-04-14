@@ -13,19 +13,18 @@ import pytz
 import spacy
 import os
 import subprocess
-import gdown
-import zipfile
 
 # =========================================
 # CONFIG
 # =========================================
 MODEL_PATH = "model"
-MODEL_ZIP = "model.zip"
 
+# ✅ REPLACE WITH YOUR FILE ID
 MODEL_URL = "https://drive.google.com/uc?id=1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# 🇲🇾 Malaysia timezone
 TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 
 # =========================================
@@ -44,18 +43,18 @@ def load_model():
 
     print("⬇️ Loading model on demand...")
 
-    # ✅ Download model only if not exists
-    if not os.path.exists(MODEL_PATH):
-        print("⬇️ Downloading model from Google Drive...")
-        gdown.download(MODEL_URL, MODEL_ZIP, quiet=False)
+    # Download model ONLY at runtime (NOT during build)
+   if not os.path.exists(MODEL_PATH):
+    print("⬇️ Downloading model from Google Drive...")
+    gdown.download(MODEL_URL, MODEL_ZIP, quiet=False)
 
-        print("📦 Extracting model...")
-        with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
-            zip_ref.extractall(MODEL_PATH)
+    print("📦 Extracting model...")
+    with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
+        zip_ref.extractall(MODEL_PATH)
 
-        print("✅ Model extracted!")
+    print("✅ Model ready!")
 
-    # ✅ Load model
+    # Load model
     model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
     model.to(device)
     model.eval()
@@ -65,11 +64,11 @@ def load_model():
     with open(f"{MODEL_PATH}/label_map.json") as f:
         label_map = json.load(f)
 
-    print("✅ Model loaded successfully!")
+    print("✅ Model ready!")
 
 
 # =========================================
-# LOAD SPACY
+# LOAD SPACY (SAFE FOR RAILWAY)
 # =========================================
 try:
     nlp = spacy.load("en_core_web_sm")
@@ -98,7 +97,9 @@ def get_today():
 
 def extract_amount(text):
     match = re.search(r'(?:rm\s*)?(\d+(?:\.\d{1,2})?)', text.lower())
-    return float(match.group(1)) if match else None
+    if match:
+        return float(match.group(1))
+    return None
 
 
 def format_datetime(dt):
@@ -106,7 +107,8 @@ def format_datetime(dt):
 
 
 def extract_date(text):
-    text_lower = re.sub(r'[^\w\s]', '', text.lower().strip())
+    text_lower = text.lower().strip()
+    text_lower = re.sub(r'[^\w\s]', '', text_lower)
 
     text_lower = text_lower.replace("yester day", "yesterday")
     text_lower = text_lower.replace("to day", "today")
@@ -134,12 +136,15 @@ def extract_date(text):
 
 
 def extract_merchant(text):
+    original_text = text
+
     match = re.search(r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)', text, re.IGNORECASE)
     if match:
-        merchant = re.sub(r'\b(for|on|with|and|using|yesterday|today|tomorrow).*', '', match.group(1), re.IGNORECASE)
+        merchant = match.group(1).strip()
+        merchant = re.sub(r'\b(for|on|with|and|using|yesterday|today|tomorrow).*', '', merchant, re.IGNORECASE)
         return merchant.strip()
 
-    doc = nlp(text)
+    doc = nlp(original_text)
     for ent in doc.ents:
         if ent.label_ in ["ORG", "GPE", "FAC"]:
             return ent.text
@@ -148,7 +153,7 @@ def extract_merchant(text):
 
 
 def predict_category(text):
-    load_model()
+    load_model()  # ✅ Lazy load
 
     inputs = tokenizer(
         text,
@@ -176,7 +181,7 @@ def process_expense(text):
 
 
 # =========================================
-# API
+# API ENDPOINTS
 # =========================================
 @app.post("/predict")
 def predict(input: TextInput):
