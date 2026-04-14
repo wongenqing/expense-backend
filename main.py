@@ -31,19 +31,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 
 # =========================================
-# DOWNLOAD MODEL FROM GOOGLE DRIVE
-# =========================================
-if not os.path.exists(MODEL_PATH):
-    print("⬇️ Downloading model from Google Drive...")
-    gdown.download(MODEL_URL, MODEL_ZIP, quiet=False)
-
-    print("📦 Extracting model...")
-    with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
-        zip_ref.extractall(MODEL_PATH)
-
-    print("✅ Model ready!")
-
-# =========================================
 # LOAD MODEL (LAZY LOAD)
 # =========================================
 model = None
@@ -58,12 +45,22 @@ def load_model():
 
     print("⬇️ Loading model on demand...")
 
-    # download if not exist
+    # 🔥 DOWNLOAD ONLY WHEN API IS CALLED
     if not os.path.exists(MODEL_PATH):
-        subprocess.run(["pip", "install", "gdown"])
-        subprocess.run(["gdown", MODEL_URL, "-O", "model.zip"])
-        subprocess.run(["unzip", "model.zip"])
+        print("⬇️ Downloading model from Google Drive...")
 
+        file_id = "1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg"
+        url = f"https://drive.google.com/uc?id={file_id}"
+
+        gdown.download(url, MODEL_ZIP, quiet=False)
+
+        print("📦 Extracting model...")
+        with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
+            zip_ref.extractall(MODEL_PATH)
+
+        print("✅ Model downloaded!")
+
+    print("🔄 Loading model into memory...")
     model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
     model.to(device)
     model.eval()
