@@ -1,10 +1,7 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-
 fastapi
 uvicorn
-torch==2.2.2+cpu
+torch==2.2.2
 transformers
-spacy
 dateparser
 pytz
 gdown
