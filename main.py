@@ -114,8 +114,10 @@ def format_datetime(dt):
 
 def extract_date(text):
     text_lower = re.sub(r'[^\w\s]', '', text.lower())
+
     today = get_today()
 
+    # Explicit keywords
     if "yesterday" in text_lower:
         return format_datetime(today - timedelta(days=1))
     if "today" in text_lower:
@@ -123,10 +125,20 @@ def extract_date(text):
     if "tomorrow" in text_lower:
         return format_datetime(today + timedelta(days=1))
 
-    results = search_dates(text_lower)
-    if results:
-        return format_datetime(results[0][1])
+    # Only detect date if month/day keywords exist
+    date_keywords = [
+        "jan","feb","mar","apr","may","jun",
+        "jul","aug","sep","oct","nov","dec",
+        "monday","tuesday","wednesday","thursday",
+        "friday","saturday","sunday"
+    ]
 
+    if any(k in text_lower for k in date_keywords):
+        results = search_dates(text_lower)
+        if results:
+            return format_datetime(results[0][1])
+
+    # DEFAULT: today
     return format_datetime(today)
 
 
