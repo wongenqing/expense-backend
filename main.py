@@ -78,6 +78,10 @@ except:
 # =========================================
 app = FastAPI()
 
+@app.on_event("startup")
+def startup_event():
+    load_model()
+
 
 class TextInput(BaseModel):
     text: str
