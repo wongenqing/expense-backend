@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import pytz
 import spacy
 import os
+import subprocess
 
 # Config
 MODEL_PATH = "model/"
@@ -21,31 +22,47 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 
 
-# Load model
-print("📂 Model files:", os.listdir(MODEL_PATH))
+# =========================================
+# LOAD MODEL (SAFE FOR RAILWAY)
+# =========================================
+model = None
+tokenizer = None
+label_map = None
 
-print("🔄 Loading model...")
-model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
-model.to(device)
-model.eval()
+if os.path.exists(MODEL_PATH):
+    print("📂 Model files:", os.listdir(MODEL_PATH))
+
+    print("🔄 Loading model...")
+    model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
+    model.to(device)
+    model.eval()
+
+    print("🔄 Loading tokenizer...")
+    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+
+    # Load label map
+    with open(f"{MODEL_PATH}/label_map.json") as f:
+        label_map = json.load(f)
+
+    print("✅ Model loaded successfully!")
+else:
+    print("⚠️ Model folder not found (Railway will handle later)")
 
 
-# Load tokenizer
-print("🔄 Loading tokenizer...")
-tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+# =========================================
+# LOAD SPACY (SAFE FOR RAILWAY)
+# =========================================
+try:
+    nlp = spacy.load("en_core_web_sm")
+except:
+    print("⬇️ Downloading spaCy model...")
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    nlp = spacy.load("en_core_web_sm")
 
 
-# Load label map
-with open(f"{MODEL_PATH}/label_map.json") as f:
-    label_map = json.load(f)
-
-
-# Load SpaCy Model
-nlp = spacy.load("en_core_web_sm")
-
-print("✅ Model loaded successfully!")
-
+# =========================================
 # FASTAPI INIT
+# =========================================
 app = FastAPI(title="Expense NLP API 🇲🇾🚀")
 
 
@@ -54,9 +71,12 @@ class TextInput(BaseModel):
     text: str
 
 
-# get today (Malaysia Time)
+# =========================================
+# UTIL FUNCTIONS
+# =========================================
 def get_today():
     return datetime.now(TIMEZONE)
+
 
 # Extract Amount
 def extract_amount(text):
@@ -64,6 +84,7 @@ def extract_amount(text):
     if match:
         return float(match.group(1))
     return None
+
 
 # Extract Date
 def format_datetime(dt):
@@ -82,7 +103,6 @@ def extract_date(text):
 
     today = get_today()
 
-    # relative words
     if "yesterday" in text_lower:
         return format_datetime(today - timedelta(days=1))
 
@@ -92,7 +112,6 @@ def extract_date(text):
     if "tomorrow" in text_lower:
         return format_datetime(today + timedelta(days=1))
 
-    # clean text
     clean_text = re.sub(r'rm\s*\d+(\.\d{1,2})?', '', text_lower)
     clean_text = re.sub(r'\b\d+\b', '', clean_text)
 
@@ -166,8 +185,12 @@ def extract_merchant(text):
 
     return None
 
+
 # Predict category
 def predict_category(text):
+    if model is None or tokenizer is None or label_map is None:
+        return "Model not available"
+
     inputs = tokenizer(
         text,
         return_tensors="pt",
@@ -194,13 +217,14 @@ def process_expense(text):
     }
 
 
-# API endpoint
+# =========================================
+# API ENDPOINTS
+# =========================================
 @app.post("/predict")
 def predict(input: TextInput):
     return process_expense(input.text)
 
 
-# Health check
 @app.get("/")
 def root():
     return {"message": "Expense NLP API is running 🇲🇾🚀"}
