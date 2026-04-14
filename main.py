@@ -13,17 +13,14 @@ import pytz
 import spacy
 import os
 import subprocess
-import gdown
-import zipfile
 
 # =========================================
 # CONFIG
 # =========================================
 MODEL_PATH = "model"
-MODEL_ZIP = "model.zip"
 
-# 🔥 REPLACE THIS WITH YOUR GOOGLE DRIVE FILE ID
-MODEL_URL = "https://drive.google.com/file/d/1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg/view?usp=drive_link"
+# ✅ REPLACE WITH YOUR FILE ID
+MODEL_URL = "https://drive.google.com/uc?id=1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -31,11 +28,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 
 # =========================================
-# LOAD MODEL (LAZY LOAD)
+# GLOBAL MODEL (LAZY LOAD)
 # =========================================
 model = None
 tokenizer = None
 label_map = None
+
 
 def load_model():
     global model, tokenizer, label_map
@@ -45,22 +43,24 @@ def load_model():
 
     print("⬇️ Loading model on demand...")
 
-    # 🔥 DOWNLOAD ONLY WHEN API IS CALLED
+    # Download model ONLY at runtime (NOT during build)
     if not os.path.exists(MODEL_PATH):
         print("⬇️ Downloading model from Google Drive...")
 
-        file_id = "1Bv76nF8tQtvfTPKl6L_J2eat_zCGQDNg"
-        url = f"https://drive.google.com/uc?id={file_id}"
+        subprocess.run(["pip", "install", "gdown"])
 
-        gdown.download(url, MODEL_ZIP, quiet=False)
+        subprocess.run([
+            "gdown",
+            "--fuzzy",
+            MODEL_URL,
+            "-O",
+            "model.zip"
+        ])
 
         print("📦 Extracting model...")
-        with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
-            zip_ref.extractall(MODEL_PATH)
+        subprocess.run(["unzip", "model.zip"])
 
-        print("✅ Model downloaded!")
-
-    print("🔄 Loading model into memory...")
+    # Load model
     model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
     model.to(device)
     model.eval()
@@ -159,7 +159,7 @@ def extract_merchant(text):
 
 
 def predict_category(text):
-    load_model()  # 🔥 LOAD ONLY WHEN NEEDED
+    load_model()  # ✅ Lazy load
 
     inputs = tokenizer(
         text,
