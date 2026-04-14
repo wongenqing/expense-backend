@@ -61,8 +61,7 @@ def load_model():
     model.to(device)
     model.eval()
 
-    # ✅ FIX 1: Use correct tokenizer (IMPORTANT)
-    tokenizer = RobertaTokenizerFast.from_pretrained(MODEL_PATH)
+    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
 
     # Load label map
     with open(f"{MODEL_PATH}/label_map.json") as f:
