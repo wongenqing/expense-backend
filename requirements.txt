@@ -6,3 +6,4 @@ transformers
 spacy
 dateparser
 pytz
+gdown
