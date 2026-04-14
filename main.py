@@ -169,29 +169,6 @@ def extract_merchant(text):
 
 
 def predict_category(text):
-    text_lower = text.lower()
-
-    # =========================
-    # ✅ RULE-BASED PRIORITY
-    # =========================
-    food_keywords = [
-        "lunch", "dinner", "breakfast", "food", "eat",
-        "restaurant", "kfc", "mcd", "mcdonald", "grabfood"
-    ]
-
-    transport_keywords = [
-        "grab", "taxi", "bus", "lrt", "train", "fuel", "petrol"
-    ]
-
-    if any(word in text_lower for word in food_keywords):
-        return "Food"
-
-    if any(word in text_lower for word in transport_keywords):
-        return "Transportation"
-
-    # =========================
-    # 🤖 AI MODEL (fallback)
-    # =========================
     inputs = tokenizer(
         text,
         return_tensors="pt",
