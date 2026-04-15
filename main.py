@@ -3,7 +3,7 @@
 # =========================================
 from fastapi import FastAPI
 from pydantic import BaseModel
-from transformers import RobertaForSequenceClassification, RobertaTokenizerFast
+from transformers import RobertaForSequenceClassification, AutoTokenizer
 import torch
 import json
 import re
@@ -15,6 +15,7 @@ import os
 import subprocess
 import gdown
 import zipfile
+import torch.nn.functional as F
 
 # =========================================
 # CONFIG
@@ -27,12 +28,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 
 # =========================================
-# GLOBAL MODEL
+# GLOBALS
 # =========================================
 model = None
 tokenizer = None
 label_map = None
-
 
 # =========================================
 # LOAD MODEL
@@ -45,7 +45,7 @@ def load_model():
 
     print("⬇️ Loading model...")
 
-    # Download if not exist
+    # Download model if not exists
     if not os.path.exists(MODEL_PATH):
         print("⬇️ Downloading model...")
         gdown.download(MODEL_URL, MODEL_ZIP, quiet=False)
@@ -56,19 +56,17 @@ def load_model():
 
     print("📂 Model folder:", os.listdir(MODEL_PATH))
 
-    # Load model
     model = RobertaForSequenceClassification.from_pretrained(MODEL_PATH)
     model.to(device)
     model.eval()
 
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+    # 🔥 FIX: Always use base tokenizer (avoid corruption issues)
+    tokenizer = AutoTokenizer.from_pretrained("roberta-base")
 
-    # Load label map
     with open(f"{MODEL_PATH}/label_map.json") as f:
         label_map = json.load(f)
 
     print("✅ Model ready!")
-
 
 # =========================================
 # LOAD SPACY
@@ -80,67 +78,71 @@ except:
     subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
     nlp = spacy.load("en_core_web_sm")
 
-
 # =========================================
 # FASTAPI
 # =========================================
-app = FastAPI()
-
+app = FastAPI(title="Expense NLP API 🇲🇾🚀")
 
 @app.on_event("startup")
 def startup_event():
     load_model()
 
-
 class TextInput(BaseModel):
     text: str
-
 
 @app.get("/")
 def root():
     return {"message": "API is running 🚀"}
 
-
 # =========================================
-# FUNCTIONS
+# UTIL FUNCTIONS
 # =========================================
 def get_today():
     return datetime.now(TIMEZONE)
 
+def format_datetime(dt):
+    return dt.strftime("%B %d, %Y at %I:%M:%S %p UTC+8")
 
-# ✅ CLEAN TEXT (IMPORTANT FOR MODEL)
+# =========================================
+# CLEAN TEXT (IMPROVED)
+# =========================================
 def clean_text(text):
     text = text.lower()
+    text = re.sub(r'rm\s*\d+(\.\d+)?', '', text)
+    text = re.sub(r'\d+', '', text)
+    text = re.sub(r'[^\w\s]', '', text)
+    return re.sub(r'\s+', ' ', text).strip()
 
-    # remove amount
-    text = re.sub(r'rm\s*\d+(\.\d{1,2})?', '', text)
-
-    # remove filler words
-    text = re.sub(r'\b(spent|paid|bought|for|on|at|in|the)\b', '', text)
-
-    return text.strip()
-
-
+# =========================================
+# AMOUNT
+# =========================================
 def extract_amount(text):
     match = re.search(r'(?:rm\s*)?(\d+(?:\.\d{1,2})?)', text.lower())
     return float(match.group(1)) if match else None
 
-
-def format_datetime(dt):
-    return dt.strftime("%B %d, %Y at %I:%M:%S %p UTC+8")
-
-
+# =========================================
+# DATE (🔥 FIXED LOGIC)
+# =========================================
 def extract_date(text):
-    text_lower = re.sub(r'[^\w\s]', '', text.lower())
+    text_lower = text.lower().strip()
+    text_lower = re.sub(r'[^\w\s]', '', text_lower)
+
+    text_lower = text_lower.replace("yester day", "yesterday")
+    text_lower = text_lower.replace("to day", "today")
 
     today = get_today()
 
+    # explicit
     if "yesterday" in text_lower:
         return format_datetime(today - timedelta(days=1))
     if "today" in text_lower:
         return format_datetime(today)
     if "tomorrow" in text_lower:
         return format_datetime(today + timedelta(days=1))
+
+    # remove noise
+    clean_text_ = re.sub(r'rm\s*\d+(\.\d{1,2})?', '', text_lower)
+    clean_text_ = re.sub(r'\b\d+\b', '', clean_text_)
 
     date_keywords = [
         "jan","feb","mar","apr","may","jun",
@@ -149,117 +151,66 @@ def extract_date(text):
         "friday","saturday","sunday"
     ]
 
-    if any(k in text_lower for k in date_keywords):
-        results = search_dates(text_lower)
+    if any(k in clean_text_ for k in date_keywords):
+        results = search_dates(clean_text_, settings={'PREFER_DATES_FROM': 'past'})
         if results:
-            return format_datetime(results[0][1])
+            _, date_obj = results[0]
+            date_obj = TIMEZONE.localize(date_obj) if date_obj.tzinfo is None else date_obj.astimezone(TIMEZONE)
+            return format_datetime(date_obj)
 
     return format_datetime(today)
 
+# =========================================
+# MERCHANT (🔥 IMPROVED)
+# =========================================
+KNOWN_MERCHANTS = [
+    "kfc","mcdonald","mcd","starbucks","tealive",
+    "petronas","shell","grab","shopee","lazada"
+]
 
 def extract_merchant(text):
-    match = re.search(
-        r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)',
-        text,
-        re.IGNORECASE
-    )
+    text_lower = text.lower()
 
+    # ✅ known merchants first
+    for m in KNOWN_MERCHANTS:
+        if m in text_lower:
+            return m.title()
+
+    # regex
+    match = re.search(r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)', text, re.IGNORECASE)
     if match:
-        merchant = match.group(1).strip()
-
         merchant = re.sub(
-            r'\b(yesterday|today|tomorrow|for|on|with|and|using)\b.*',
+            r'\b(for|on|with|and|using|yesterday|today|tomorrow).*',
             '',
-            merchant,
+            match.group(1),
             flags=re.IGNORECASE
         )
-
         return merchant.strip()
 
+    # spacy fallback
     doc = nlp(text)
     for ent in doc.ents:
-        if ent.label_ in ["ORG", "GPE"]:
+        if ent.label_ in ["ORG", "GPE", "FAC"]:
             return ent.text
 
     return None
 
 # =========================================
-# RULE-BASED FALLBACK (19 categories)
+# RULE-BASED CATEGORY
 # =========================================
 def rule_based_category(text):
     text = text.lower()
 
     rules = {
-        "Food & Drink": [
-            "food", "lunch", "dinner", "breakfast",
-            "kfc", "mcd", "mcdonald", "restaurant",
-            "coffee", "starbucks", "tea", "grabfood"
-        ],
-
-        "Transportation": [
-            "grab", "taxi", "uber", "bus", "train",
-            "lrt", "mrt", "toll", "petrol", "fuel",
-            "parking"
-        ],
-
-        "Shopping": [
-            "shop", "shopping", "mall", "lazada",
-            "shopee", "store", "clothes", "shoes"
-        ],
-
-        "Groceries": [
-            "grocery", "supermarket", "tesco",
-            "aeon", "giant", "mydin", "99 speedmart"
-        ],
-
-        "Utilities": [
-            "electric", "water", "wifi", "internet",
-            "unifi", "celcom", "maxis"
-        ],
-
-        "Entertainment": [
-            "movie", "cinema", "netflix", "spotify",
-            "game", "concert"
-        ],
-
-        "Healthcare": [
-            "hospital", "clinic", "pharmacy",
-            "medicine", "doctor"
-        ],
-
-        "Education": [
-            "school", "tuition", "course", "book",
-            "university", "college"
-        ],
-
-        "Travel": [
-            "flight", "hotel", "airbnb", "trip"
-        ],
-
-        "Insurance": [
-            "insurance", "takaful"
-        ],
-
-        "Investment": [
-            "stock", "crypto", "bitcoin", "fund"
-        ],
-
-        "Rent": [
-            "rent", "room rent"
-        ],
-
-        "Gifts": [
-            "gift", "present", "birthday"
-        ],
-
-        "Subscriptions": [
-            "subscription", "monthly"
-        ],
-
-        "Personal Care": [
-            "salon", "haircut", "spa", "skincare"
-        ],
-
+        "Food & Drink": ["food","lunch","dinner","kfc","mcd","coffee","starbucks"],
+        "Transportation": ["grab","taxi","petrol","fuel","toll","parking"],
+        "Shopping": ["shopping","lazada","shopee","mall"],
+        "Groceries": ["grocery","tesco","aeon","giant"],
+        "Utilities": ["electric","water","wifi","internet"],
+        "Entertainment": ["movie","netflix","spotify"],
+        "Healthcare": ["clinic","hospital","pharmacy"],
+        "Education": ["school","course","book"],
+        "Rent": ["rent"]
     }
 
     for category, keywords in rules.items():
@@ -268,9 +219,10 @@ def rule_based_category(text):
 
     return None
 
-
+# =========================================
+# PREDICT CATEGORY (🔥 IMPROVED)
+# =========================================
 def predict_category(text):
-    # ✅ Clean input for model
     cleaned = clean_text(text)
 
     inputs = tokenizer(
@@ -284,18 +236,18 @@ def predict_category(text):
     with torch.no_grad():
         outputs = model(**inputs)
 
-    pred_id = outputs.logits.argmax().item()
-    model_category = label_map[str(pred_id)]
+    probs = F.softmax(outputs.logits, dim=1)
+    confidence, pred_id = torch.max(probs, dim=1)
 
-    # 🔥 Rule-based fallback
+    model_category = label_map[str(pred_id.item())]
+
     rule_category = rule_based_category(text)
 
-    # ✅ Smart override (ONLY when model is weak)
-    if rule_category and model_category in ["Others"]:
+    # ✅ smarter fallback
+    if confidence.item() < 0.65 and rule_category:
         return rule_category
 
     return model_category
-
 
 # =========================================
 # API
