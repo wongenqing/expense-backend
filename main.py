@@ -171,13 +171,21 @@ KNOWN_MERCHANTS = [
 def extract_merchant(text):
     text_lower = text.lower()
 
-    # ✅ known merchants first
+    # ✅ known merchants (but return ORIGINAL text version)
     for m in KNOWN_MERCHANTS:
         if m in text_lower:
-            return m.title()
+            # find exact match in original text
+            pattern = re.compile(re.escape(m), re.IGNORECASE)
+            match = pattern.search(text)
+            if match:
+                return match.group(0)  # 🔥 original casing
 
-    # regex
-    match = re.search(r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)', text, re.IGNORECASE)
+    # ✅ regex extraction (already uses original text)
+    match = re.search(
+        r'(?:at|from|in)\s+([A-Za-z][A-Za-z0-9&\'\-\s]*)',
+        text,
+        re.IGNORECASE
+    )
     if match:
         merchant = re.sub(
             r'\b(for|on|with|and|using|yesterday|today|tomorrow).*',
@@ -185,13 +193,13 @@ def extract_merchant(text):
             match.group(1),
             flags=re.IGNORECASE
         )
-        return merchant.strip()
+        return merchant.strip()  # 🔥 keep original casing
 
-    # spacy fallback
+    # ✅ spaCy fallback (already original)
     doc = nlp(text)
     for ent in doc.ents:
         if ent.label_ in ["ORG", "GPE", "FAC"]:
-            return ent.text
+            return ent.text  # 🔥 original casing
 
     return None
 
