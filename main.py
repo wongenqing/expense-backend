@@ -106,22 +106,21 @@ def format_datetime(dt):
     return dt.strftime("%B %d, %Y at %I:%M:%S %p UTC+8")
 
 
-# remove extra spaces only (do NOT destroy text)
+# remove extra spaces only
 def clean_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
-# extract amount like RM20 or 20.50
+# extract amount
 def extract_amount(text):
     match = re.search(r"(?:rm\s*)?(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE)
     return float(match.group(1)) if match else None
 
-
-# extract date from natural language
+# extact date
 def extract_date(text):
     raw = text.strip()
 
-    # fix speech recognition mistakes
+    # fix common speech-to-text mistakes
     fixed = raw.lower()
     fixed = fixed.replace("yester day", "yesterday")
     fixed = fixed.replace("to day", "today")
@@ -129,28 +128,39 @@ def extract_date(text):
 
     now = get_now()
 
-    # quick keywords
+    # if user clearly says yesterday
     if "yesterday" in fixed:
         return format_datetime(now - timedelta(days=1))
+
+    # if user says today
     if "today" in fixed:
         return format_datetime(now)
+
+    # if user says tomorrow
     if "tomorrow" in fixed:
         return format_datetime(now + timedelta(days=1))
 
-    # try NLP date parsing
-    results = search_dates(raw, settings={'PREFER_DATES_FROM': 'past'})
+    # try to detect actual date from text
+    results = search_dates(
+        raw,
+        settings={'PREFER_DATES_FROM': 'past'}
+    )
 
     if results:
-        _, date_obj = results[0]
+        detected_text, date_obj = results[0]
 
-        if date_obj.tzinfo is None:
-            date_obj = TIMEZONE.localize(date_obj)
-        else:
-            date_obj = date_obj.astimezone(TIMEZONE)
+        # only accept if it looks like a real date (not random word)
+        if re.search(r'\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec', detected_text.lower()):
 
-        return format_datetime(date_obj)
+            # convert to malaysia timezone
+            if date_obj.tzinfo is None:
+                date_obj = TIMEZONE.localize(date_obj)
+            else:
+                date_obj = date_obj.astimezone(TIMEZONE)
 
-    # fallback to now
+            return format_datetime(date_obj)
+
+    # no date found → just use today
     return format_datetime(now)
 
 
