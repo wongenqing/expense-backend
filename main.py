@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import RobertaForSequenceClassification, AutoTokenizer
 import torch
-import pickle
+import json
 import re
 from dateparser.search import search_dates
 from datetime import datetime, timedelta
@@ -28,15 +28,15 @@ TIMEZONE = pytz.timezone("Asia/Kuala_Lumpur")
 # global variables
 model = None
 tokenizer = None
-label_encoder = None
+label_map = None
 nlp = None
 
 
 def load_model():
-    global model, tokenizer, label_encoder
+    global model, tokenizer, label_map
 
     # avoid loading multiple times
-    if model is not None and tokenizer is not None and label_encoder is not None:
+    if model is not None and tokenizer is not None and label_map is not None:
         return
 
     print("Loading model...")
@@ -57,12 +57,12 @@ def load_model():
     model.to(device)
     model.eval()
 
-    # load tokenizer from the SAME trained model folder
+    # use the same base tokenizer used during training
     tokenizer = AutoTokenizer.from_pretrained("roberta-base")
 
-    # load label encoder from training
-    with open(f"{MODEL_PATH}/label_encoder.pkl", "rb") as f:
-        label_encoder = pickle.load(f)
+    # load label map instead of label_encoder.pkl
+    with open(f"{MODEL_PATH}/label_map.json", "r", encoding="utf-8") as f:
+        label_map = json.load(f)
 
     print("Model ready")
 
@@ -116,7 +116,7 @@ def format_datetime(dt):
     return dt.strftime("%B %d, %Y at %I:%M:%S %p UTC+8")
 
 
-# use SAME text cleaning as training code
+# use same text cleaning as training code
 def clean_text(text):
     text = str(text).strip()
     text = re.sub(r"[^\w\s]", "", text)   # remove punctuation
@@ -226,7 +226,7 @@ def predict_category(text):
     confidence, pred_id = torch.max(probs, dim=1)
 
     pred_index = pred_id.item()
-    pred_label = label_encoder.inverse_transform([pred_index])[0]
+    pred_label = label_map[str(pred_index)]
 
     return {
         "cleaned_text": cleaned,
