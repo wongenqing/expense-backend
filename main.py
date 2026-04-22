@@ -58,7 +58,7 @@ def load_model():
     model.eval()
 
     # load tokenizer from the SAME trained model folder
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+    tokenizer = AutoTokenizer.from_pretrained("roberta-base")
 
     # load label encoder from training
     with open(f"{MODEL_PATH}/label_encoder.pkl", "rb") as f:
